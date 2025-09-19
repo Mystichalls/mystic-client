@@ -1,6 +1,8 @@
 // pages/dashboard.js
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import Link from 'next/link';
+
 
 // PvE tabs
 import Tower from '../components/pve/Tower';
@@ -155,9 +157,9 @@ export default function Dashboard() {
         {isAdmin(user?.email) && (
           <>
             {' · '}
-            <a href="/admin/telemetry" style={{ textDecoration: 'underline' }}>
+            <Link href="/admin/telemetry" style={{ textDecoration: 'underline' }}>
               Telemetry
-            </a>
+            </Link>
           </>
         )}
 
