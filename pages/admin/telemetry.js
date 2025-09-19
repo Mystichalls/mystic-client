@@ -1,7 +1,47 @@
 // pages/admin/telemetry.js
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { getServerClient } from '../../lib/supabaseServer';
 
+export async function getServerSideProps(ctx) {
+  const supa = getServerClient(ctx);
+
+  // 1) check sessie
+  const {
+    data: { session },
+    error,
+  } = await supa.auth.getSession();
+
+  if (!session || error) {
+    return {
+      redirect: { destination: '/login', permanent: false },
+    };
+  }
+
+  // 2) check admin (server-side env!)
+  //    Voorbeeld: ADMIN_EMAILS="info@mystichalls.com, admin@voorbeeld.nl"
+  const adminList = (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  const email = (session.user.email || '').toLowerCase();
+
+  if (!adminList.includes(email)) {
+    // geen admin → terug naar dashboard
+    return {
+      redirect: { destination: '/dashboard', permanent: false },
+    };
+  }
+
+  // 3) optioneel props meegeven
+  return {
+    props: {
+      userEmail: session.user.email ?? null,
+      isAdmin: true,
+    },
+  };
+}
 /** Kleine helper voor datetime-local -> ISO */
 function toISO(dtLocal) {
   try {
