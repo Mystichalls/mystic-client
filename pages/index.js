@@ -115,3 +115,14 @@ export default function Home() {
     </>
   );
 }
+
+// Redirect '/' -> '/login' (server-side)
+export async function getServerSideProps() {
+  return {
+    redirect: {
+      destination: '/login', // verander naar '/dashboard' als je daarheen wilt
+      permanent: false,
+    },
+  };
+}
+
