@@ -1,16 +1,17 @@
 // pages/dashboard.js
+// === Imports ===
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
 import Link from 'next/link';
+import { supabase } from '../lib/supabase';
+import { getServerClient } from '../lib/supabaseServer';
 
-
-// PvE tabs
+// PvE tabs (jouw bestaande components)
 import Tower from '../components/pve/Tower';
 import Towns from '../components/pve/Towns';
 import Road from '../components/pve/Road';
 import Dungeon from '../components/pve/Dungeon';
 
-/* ==== Admin helper (lees uit env, client-side) ==== */
+/* ==== Admin helper (leest uit env, client-side) ==== */
 const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .split(',')
   .map((s) => s.trim().toLowerCase())
@@ -18,18 +19,44 @@ const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
 
 const isAdmin = (email) => ADMIN_EMAILS.includes((email || '').toLowerCase());
 
+/* ==== SERVER-SIDE GUARD (redirect naar /login als geen sessie) ==== */
+export async function getServerSideProps(ctx) {
+  const supa = getServerClient(ctx);
+  const {
+    data: { session },
+    error,
+  } = await supa.auth.getSession();
+
+  if (!session || error) {
+    return {
+      redirect: { destination: '/login', permanent: false },
+    };
+  }
+
+  // optioneel userdata aan props meegeven (niet verplicht te gebruiken)
+  return {
+    props: {
+      userFromServer: {
+        id: session.user.id,
+        email: session.user.email ?? null,
+      },
+    },
+  };
+}
+
+/* ==== HOOFD-COMPONENT (enige default export!) ==== */
 export default function Dashboard() {
-  // === Auth & Profile ===
+  // --- Auth & Profile ---
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // === Wallet (coins/dust) ===
+  // --- Wallet (coins/dust) ---
   const [wallet, setWallet] = useState({ coins: 0, dust: 0 });
   const [walletLoading, setWalletLoading] = useState(false);
 
-  // === Tabs ===
+  // --- Tabs ---
   const tabs = ['Tower', 'Towns', 'Dungeon', 'Road'];
   const [tab, setTab] = useState('Tower');
 
@@ -87,7 +114,7 @@ export default function Dashboard() {
 
   async function onLogout() {
     await supabase.auth.signOut();
-    // terug naar de homepage (of /login, wat jij wilt)
+    // terug naar home of login
     window.location.href = '/';
   }
 
@@ -123,6 +150,7 @@ export default function Dashboard() {
     if (error && error.code !== 'PGRST116') {
       console.error('Wallet load error:', error);
     }
+
     setWallet({
       coins: data?.coins ?? 0,
       dust: data?.dust ?? 0,
@@ -147,45 +175,44 @@ export default function Dashboard() {
     );
   }
 
+  // ---- UI ----
   return (
     <div style={{ padding: 16, maxWidth: 1000 }}>
       <h1>Mystic Halls — Dashboard</h1>
 
       <div style={{ marginBottom: 12 }}>
-        Welkom, <strong>{profile?.username || '(geen username)'}</strong>{' '}
         <em>{user.email}</em>
         {isAdmin(user?.email) && (
           <>
             {' · '}
             <Link href="/admin/telemetry" style={{ textDecoration: 'underline' }}>
-              Telemetry
+              Admin Telemetry
             </Link>
           </>
         )}
+      </div>
 
-        {/* Uitlog-knop */}
-        <button
-          onClick={onLogout}
-          style={{
-            marginLeft: 8,
-            padding: '2px 8px',
-            border: '1px solid #ddd',
-            borderRadius: 4,
-            background: '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          Uitloggen
-        </button>
+      {/* Uitlog-knop */}
+      <button
+        onClick={onLogout}
+        style={{
+          marginLeft: 8,
+          padding: '2px 8px',
+          border: '1px solid #ddd',
+          borderRadius: 4,
+          background: '#fff',
+          cursor: 'pointer',
+        }}
+      >
+        Uitloggen
+      </button>
 
-        <div
-          style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}
-        >
-          <strong>Saldo:</strong>
-          <span>💰 {walletLoading ? '…' : wallet.coins} coins</span>
-          <span>✨ {walletLoading ? '…' : wallet.dust} dust</span>
-          <button onClick={refreshWallet}>Ververs</button>
-        </div>
+      {/* Wallet */}
+      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
+        <strong>Saldo:</strong>
+        <span>{walletLoading ? '…' : wallet.coins} coins</span>
+        <span>{walletLoading ? '…' : wallet.dust} dust</span>
+        <button onClick={refreshWallet}>Ververs</button>
       </div>
 
       {/* Username aanpassen */}
@@ -222,8 +249,8 @@ export default function Dashboard() {
       <div style={{ marginTop: 8 }}>
         {tab === 'Tower' && <Tower user={user} />}
         {tab === 'Towns' && <Towns user={user} />}
-        {tab === 'Road' && <Road user={user} />}
         {tab === 'Dungeon' && <Dungeon onAfterSave={refreshWallet} />}
+        {tab === 'Road' && <Road user={user} />}
       </div>
     </div>
   );
