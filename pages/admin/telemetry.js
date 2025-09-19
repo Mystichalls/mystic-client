@@ -42,6 +42,7 @@ export async function getServerSideProps(ctx) {
     },
   };
 }
+
 /** Kleine helper voor datetime-local -> ISO */
 function toISO(dtLocal) {
   try {
@@ -54,11 +55,27 @@ function toISO(dtLocal) {
   }
 }
 
+/** Standaard range: laatste 7 dagen (yyyy-mm-ddTHH:mm voor <input type="datetime-local">) */
+function getDefaultRange() {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - 7);
+
+  const toLocal = new Date(to.getTime() - to.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+  const fromLocal = new Date(from.getTime() - from.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+
+  return { fromLocal, toLocal };
+}
+
 /** Eenvoudige mini-barchart zonder dependencies */
 function MiniChart({ series, width = 480, height = 80, pad = 6 }) {
   if (!Array.isArray(series) || series.length === 0) return null;
 
-  const max = Math.max(...series.map(d => d.count), 1);
+  const max = Math.max(...series.map((d) => d.count), 1);
   const bw = (width - pad * 2) / series.length;
 
   return (
@@ -106,9 +123,13 @@ export default function TelemetryAdmin() {
   const [token, setToken] = useState('');
   const [event, setEvent] = useState(''); // '' = alle events
 
-
+  // Eerste keer: zet default range (laatste 7 dagen) en laad
   useEffect(() => {
-    load();
+    const { fromLocal, toLocal } = getDefaultRange();
+    setFrom((prev) => prev || fromLocal);
+    setTo((prev) => prev || toLocal);
+    // kleine delay zodat state staat vóór load
+    setTimeout(load, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -158,14 +179,16 @@ export default function TelemetryAdmin() {
   }
 
   function onResetRange() {
-    setFrom('');
-    setTo('');
-    // direct herladen zonder range
+    const { fromLocal, toLocal } = getDefaultRange();
+    setFrom(fromLocal);
+    setTo(toLocal);
+    // direct herladen met nieuwe range
     setTimeout(load, 0);
   }
 
   async function exportCsv() {
     try {
+      if (loading) return; // niet tijdens laden
       if (!token) throw new Error('Geen sessie token');
 
       const qs = new URLSearchParams();
@@ -213,13 +236,14 @@ export default function TelemetryAdmin() {
 
   const recent = Array.isArray(data?.recent) ? data.recent : [];
   const recentTs = (r) => r.ts || r.created_at || '';
-// Beschikbare events voor dropdown
-const allEvents = countsRows.map(r => r.event).sort();
 
-// Client-side filteren op event
-const recentFiltered      = event ? recent.filter(r => r.event === event) : recent;
-const countsRowsFiltered  = event ? countsRows.filter(r => r.event === event) : countsRows;
-const totalFiltered       = event ? recentFiltered.length : total;
+  // Beschikbare events voor dropdown
+  const allEvents = countsRows.map((r) => r.event).sort();
+
+  // Client-side filteren op event
+  const recentFiltered = event ? recent.filter((r) => r.event === event) : recent;
+  const countsRowsFiltered = event ? countsRows.filter((r) => r.event === event) : countsRows;
+  const totalFiltered = event ? recentFiltered.length : total;
 
   return (
     <div style={{ padding: 16, maxWidth: 1000 }}>
@@ -248,17 +272,26 @@ const totalFiltered       = event ? recentFiltered.length : total;
             value={to}
             onChange={(e) => setTo(e.target.value)}
           />
-<label style={{ marginLeft: 10 }}>Event:</label>
-<select value={event} onChange={(e) => setEvent(e.target.value)}>
-  <option value="">Alle events</option>
-  {allEvents.map((evt) => (
-    <option key={evt} value={evt}>{evt}</option>
-  ))}
-</select>
 
-          <button onClick={load}>Refresh</button>
-          <button onClick={onResetRange}>Reset</button>
-          <button onClick={exportCsv} style={{ marginLeft: 8 }}>CSV export</button>
+          <label style={{ marginLeft: 10 }}>Event:</label>
+          <select value={event} onChange={(e) => setEvent(e.target.value)}>
+            <option value="">Alle events</option>
+            {allEvents.map((evt) => (
+              <option key={evt} value={evt}>
+                {evt}
+              </option>
+            ))}
+          </select>
+
+          <button onClick={load} disabled={loading}>
+            {loading ? 'Bezig…' : 'Refresh'}
+          </button>
+          <button onClick={onResetRange} disabled={loading}>
+            Reset
+          </button>
+          <button onClick={exportCsv} style={{ marginLeft: 8 }} disabled={loading}>
+            CSV export
+          </button>
         </div>
       </div>
 
@@ -279,18 +312,28 @@ const totalFiltered       = event ? recentFiltered.length : total;
         <table style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>Event</th>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>#</th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>
+                Event
+              </th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>
+                #
+              </th>
             </tr>
           </thead>
           <tbody>
             {countsRows.length === 0 && (
-              <tr><td colSpan={2}>—</td></tr>
+              <tr>
+                <td colSpan={2}>—</td>
+              </tr>
             )}
             {countsRowsFiltered.map(({ event, count }) => (
               <tr key={event}>
-                <td className="pr-4" style={{ paddingRight: 16 }}>{event}</td>
-                <td className="pr-4" style={{ paddingRight: 16 }}>{count}</td>
+                <td className="pr-4" style={{ paddingRight: 16 }}>
+                  {event}
+                </td>
+                <td className="pr-4" style={{ paddingRight: 16 }}>
+                  {count}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -303,14 +346,22 @@ const totalFiltered       = event ? recentFiltered.length : total;
         <table style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
             <tr>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>Tijd</th>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>Event</th>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>Props</th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>
+                Tijd
+              </th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>
+                Event
+              </th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>
+                Props
+              </th>
             </tr>
           </thead>
           <tbody>
             {recent.length === 0 && (
-              <tr><td colSpan={3}>—</td></tr>
+              <tr>
+                <td colSpan={3}>—</td>
+              </tr>
             )}
             {recentFiltered.map((r, i) => (
               <tr key={i}>
@@ -321,9 +372,7 @@ const totalFiltered       = event ? recentFiltered.length : total;
                   {r.event}
                 </td>
                 <td>
-                  <code style={{ opacity: 0.8 }}>
-                    {JSON.stringify(r.props ?? {})}
-                  </code>
+                  <code style={{ opacity: 0.8 }}>{JSON.stringify(r.props ?? {})}</code>
                 </td>
               </tr>
             ))}
@@ -333,4 +382,3 @@ const totalFiltered       = event ? recentFiltered.length : total;
     </div>
   );
 }
-
