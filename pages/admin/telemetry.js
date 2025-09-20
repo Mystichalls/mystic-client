@@ -55,7 +55,7 @@ function toISO(dtLocal) {
   }
 }
 
-/** Standaard range: laatste 7 dagen (yyyy-mm-ddTHH:mm voor <input type="datetime-local">) */
+/** Standaard range: laatste 7 dagen (yyyy-mm-ddTHH:mm) */
 function getDefaultRange() {
   const to = new Date();
   const from = new Date();
@@ -90,13 +90,12 @@ function MiniChart({ series, width = 480, height = 80, pad = 6 }) {
           </g>
         );
       })}
-      {/* labels (alleen als er niet te veel bars zijn) */}
       {series.length <= 30 &&
         series.map((d, i) => {
           const x = pad + i * bw + bw / 2;
           return (
             <text key={`lbl-${d.date}`} x={x} y={height - 2} fontSize="9" textAnchor="middle">
-              {d.date?.slice(5) /* MM-DD */}
+              {d.date?.slice(5)}
             </text>
           );
         })}
@@ -105,30 +104,28 @@ function MiniChart({ series, width = 480, height = 80, pad = 6 }) {
 }
 
 /**
- * Admin Telemetry – date-range + Refresh/Reset + CSV Export + mini chart
- * Werkt samen met /api/admin/telemetry/summary (optie A).
- * - Query params: ?from=...&to=... (ISO)
- * - Server doet admin-check op e-mail.
+ * Admin Telemetry – date-range + Event + User ID + Refresh/Reset + CSV + mini chart
+ * Werkt samen met /api/admin/telemetry/summary.
  */
 export default function TelemetryAdmin() {
   const [data, setData] = useState(null); // { ok, from, to, total, counts[], recent[], series[] }
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // UI state voor date-range inputs (datetime-local strings, bv "2025-09-10T12:34")
+  // UI state
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-
-  // sessie cachen voor exportCsv()
-  const [token, setToken] = useState('');
   const [event, setEvent] = useState(''); // '' = alle events
+  const [userId, setUserId] = useState(''); // nieuw: optioneel filter
 
-  // Eerste keer: zet default range (laatste 7 dagen) en laad
+  // sessie token voor export
+  const [token, setToken] = useState('');
+
+  // Eerste keer: default range en load
   useEffect(() => {
     const { fromLocal, toLocal } = getDefaultRange();
     setFrom((prev) => prev || fromLocal);
     setTo((prev) => prev || toLocal);
-    // kleine delay zodat state staat vóór load
     setTimeout(load, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -138,7 +135,7 @@ export default function TelemetryAdmin() {
     setErr(null);
 
     try {
-      // 1) sessie ophalen voor Bearer token
+      // sessie/token
       const { data: sessionData } = await supabase.auth.getSession();
       const session = sessionData?.session;
       if (!session) {
@@ -148,16 +145,18 @@ export default function TelemetryAdmin() {
       }
       setToken(session.access_token || '');
 
-      // 2) querystring opbouwen
+      // querystring
       const qs = new URLSearchParams();
       const fISO = toISO(from);
       const tISO = toISO(to);
       if (fISO) qs.set('from', fISO);
       if (tISO) qs.set('to', tISO);
       if (event) qs.set('event', event);
+      if (userId) qs.set('user_id', userId); // ⬅️ nieuw
+
       const url = '/api/admin/telemetry/summary' + (qs.toString() ? `?${qs}` : '');
 
-      // 3) server aanroepen met Bearer token
+      // fetch
       const r = await fetch(url, {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
@@ -182,13 +181,12 @@ export default function TelemetryAdmin() {
     const { fromLocal, toLocal } = getDefaultRange();
     setFrom(fromLocal);
     setTo(toLocal);
-    // direct herladen met nieuwe range
     setTimeout(load, 0);
   }
 
   async function exportCsv() {
     try {
-      if (loading) return; // niet tijdens laden
+      if (loading) return;
       if (!token) throw new Error('Geen sessie token');
 
       const qs = new URLSearchParams();
@@ -198,6 +196,7 @@ export default function TelemetryAdmin() {
       if (tISO) qs.set('to', tISO);
       qs.set('format', 'csv');
       if (event) qs.set('event', event);
+      if (userId) qs.set('user_id', userId); // ⬅️ nieuw
 
       const url = '/api/admin/telemetry/summary?' + qs.toString();
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -221,15 +220,15 @@ export default function TelemetryAdmin() {
   if (loading) return <div style={{ padding: 16 }}>Laden…</div>;
   if (err) return <div style={{ padding: 16 }}>Error: {err}</div>;
 
-  // Fallbacks: oude shapes vs nieuwe
+  // Fallbacks
   const total = data?.total ?? 0;
   const fromDisplay = data?.from || data?.range?.from || '';
   const toDisplay = data?.to || data?.range?.to || '';
 
-  // counts kan array of object zijn (we ondersteunen beide)
+  // counts array/object
   let countsRows = [];
   if (Array.isArray(data?.counts)) {
-    countsRows = data.counts; // [{event,count}]
+    countsRows = data.counts;
   } else if (data?.counts && typeof data.counts === 'object') {
     countsRows = Object.entries(data.counts).map(([event, count]) => ({ event, count }));
   }
@@ -237,10 +236,10 @@ export default function TelemetryAdmin() {
   const recent = Array.isArray(data?.recent) ? data.recent : [];
   const recentTs = (r) => r.ts || r.created_at || '';
 
-  // Beschikbare events voor dropdown
+  // Events dropdown
   const allEvents = countsRows.map((r) => r.event).sort();
 
-  // Client-side filteren op event
+  // Client-side filteren
   const recentFiltered = event ? recent.filter((r) => r.event === event) : recent;
   const countsRowsFiltered = event ? countsRows.filter((r) => r.event === event) : countsRows;
   const totalFiltered = event ? recentFiltered.length : total;
@@ -282,6 +281,16 @@ export default function TelemetryAdmin() {
               </option>
             ))}
           </select>
+
+          {/* NIEUW: User ID filter */}
+          <label style={{ marginLeft: 10 }}>User ID:</label>
+          <input
+            type="text"
+            placeholder="uuid (optioneel)"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value.trim())}
+            style={{ width: 280 }}
+          />
 
           <button onClick={load} disabled={loading}>
             {loading ? 'Bezig…' : 'Refresh'}
