@@ -5,7 +5,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE; // service role key (server-side)
 const ADM = (process.env.ADMIN_EMAILS || '')
   .split(',')
-  .map(s => s.trim().toLowerCase())
+  .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
 export default async function handler(req, res) {
@@ -31,9 +31,14 @@ export default async function handler(req, res) {
 
     // ===== Query params =====
     const { from, to, format } = req.query;
+
     const event =
       typeof req.query.event === 'string' ? req.query.event.trim() : '';
 
+    const user_id =
+      typeof req.query.user_id === 'string' ? req.query.user_id.trim() : '';
+
+    // ===== Range normaliseren =====
     const toDate = to ? new Date(to) : new Date(); // default nu
     const fromDate = from
       ? new Date(from)
@@ -42,16 +47,18 @@ export default async function handler(req, res) {
     const fromISO = fromDate.toISOString();
     const toISO = toDate.toISOString();
 
-    // ===== Data lezen (inclusief optioneel event-filter) =====
-    let q = supa
-      .from('pve_telemetry')
-      .select('created_at,event,props')
-      .gte('created_at', fromISO)
-      .lt('created_at', toISO);
-
-    if (event) {
-      q = q.eq('event', event);
+    // ===== Eén helper om overal dezelfde filters toe te passen =====
+    function applyFilters(q) {
+      if (fromISO) q = q.gte('created_at', fromISO);
+      if (toISO) q = q.lte('created_at', toISO);
+      if (event) q = q.eq('event', event);
+      if (user_id) q = q.eq('user_id', user_id); // nieuw
+      return q;
     }
+
+    // ===== Data lezen (recent) =====
+    let q = supa.from('pve_telemetry').select('created_at,event,props');
+    q = applyFilters(q);
 
     const { data: rows, error: qErr } = await q
       .order('created_at', { ascending: false })
@@ -94,7 +101,8 @@ export default async function handler(req, res) {
       const csv = header + body;
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      const fname = `telemetry_${fromISO.slice(0, 10)}_${toISO.slice(0, 10)}.csv`;
+      const suffixUser = user_id ? `_user_${String(user_id).slice(0, 8)}` : '';
+      const fname = `telemetry_${fromISO.slice(0, 10)}_${toISO.slice(0, 10)}${suffixUser}.csv`;
       res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
       return res.status(200).send(csv);
     }
