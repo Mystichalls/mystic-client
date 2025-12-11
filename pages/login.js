@@ -1,42 +1,109 @@
 // pages/login.js
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/router';
+import { supabase } from '../lib/supabase';
+import { getServerClient } from '../lib/supabaseServer';
 
-export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [msg, setMsg] = useState('');
+// Als je al ingelogd bent, direct naar het dashboard
+export async function getServerSideProps(ctx) {
+  const supa = getServerClient(ctx);
 
-  async function onSignIn(e) {
-    e.preventDefault();
-    setMsg('Bezig…');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return setMsg(error.message);
-    location.href = '/dashboard';
+  const {
+    data: { session },
+  } = await supa.auth.getSession();
+
+  if (session) {
+    return {
+      redirect: { destination: '/dashboard', permanent: false },
+    };
   }
 
-  async function onMagicLink(e) {
+  return { props: {} };
+}
+
+export default function LoginPage() {
+  const router = useRouter();
+
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'sent' | 'error'
+  const [message, setMessage] = useState('');
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    setMsg('Magic link verstuurd…');
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: 'http://localhost:3000/dashboard' },
-    });
-    if (error) setMsg(error.message);
+
+    if (!email) return;
+
+    setStatus('loading');
+    setMessage('');
+
+    try {
+      // Waar de magic link naartoe terugkomt
+      const redirectTo = `${window.location.origin}/supabase-callback`;
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectTo,
+        },
+      });
+
+      if (error) {
+        setStatus('error');
+        setMessage(error.message || 'Er ging iets mis bij het versturen.');
+        return;
+      }
+
+      setStatus('sent');
+      setMessage(
+        'We hebben een inloglink naar je e-mail gestuurd. Klik op de link om in te loggen.'
+      );
+      setEmail('');
+    } catch (err) {
+      setStatus('error');
+      setMessage(err.message || 'Onbekende fout bij het inloggen.');
+    }
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Inloggen</h1>
-      <form onSubmit={onSignIn} style={{ display: 'grid', gap: 8, maxWidth: 320 }}>
-        <label>E-mail</label>
-        <input value={email} onChange={e => setEmail(e.target.value)} type="email" required />
-        <label>Wachtwoord</label>
-        <input value={password} onChange={e => setPassword(e.target.value)} type="password" />
-        <button type="submit">Inloggen</button>
-        <button onClick={onMagicLink} type="button">Stuur magic link</button>
-        <div style={{ color: '#c00' }}>{msg}</div>
+    <div style={{ padding: 24, maxWidth: 400 }}>
+      <h1 style={{ marginBottom: 12 }}>Mystic Halls — Login</h1>
+      <p style={{ marginBottom: 16 }}>
+        Vul je e-mail in en we sturen je een inloglink.
+      </p>
+
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: 12 }}>
+          <label
+            htmlFor="email"
+            style={{ display: 'block', marginBottom: 4 }}
+          >
+            E-mail
+          </label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={status === 'loading' || !email}
+          style={{ padding: '8px 16px' }}
+        >
+          {status === 'loading' ? 'Bezig…' : 'Stuur inloglink'}
+        </button>
       </form>
+
+      {message && (
+        <p style={{ marginTop: 12 }}>
+          {message}
+        </p>
+      )}
     </div>
   );
 }

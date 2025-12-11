@@ -19,7 +19,6 @@ export async function getServerSideProps(ctx) {
   }
 
   // 2) check admin (server-side env!)
-  //    Voorbeeld: ADMIN_EMAILS="info@mystichalls.com, admin@voorbeeld.nl"
   const adminList = (process.env.ADMIN_EMAILS || '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -28,13 +27,11 @@ export async function getServerSideProps(ctx) {
   const email = (session.user.email || '').toLowerCase();
 
   if (!adminList.includes(email)) {
-    // geen admin → terug naar dashboard
     return {
       redirect: { destination: '/dashboard', permanent: false },
     };
   }
 
-  // 3) optioneel props meegeven
   return {
     props: {
       userEmail: session.user.email ?? null,
@@ -43,7 +40,7 @@ export async function getServerSideProps(ctx) {
   };
 }
 
-/** Kleine helper voor datetime-local -> ISO */
+/** Kleine helper voor datetime-local -> ISO (UTC) */
 function toISO(dtLocal) {
   try {
     if (!dtLocal) return '';
@@ -55,20 +52,37 @@ function toISO(dtLocal) {
   }
 }
 
-/** Standaard range: laatste 7 dagen (yyyy-mm-ddTHH:mm) */
+/** Converteer Date -> "yyyy-mm-ddTHH:mm" voor <input type="datetime-local"> (lokale tijd) */
+function toLocalInputValue(d) {
+  const t = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return t.toISOString().slice(0, 16);
+}
+
+/** Standaard range: laatste 7 dagen */
 function getDefaultRange() {
   const to = new Date();
   const from = new Date();
   from.setDate(to.getDate() - 7);
+  return { fromLocal: toLocalInputValue(from), toLocal: toLocalInputValue(to) };
+}
 
-  const toLocal = new Date(to.getTime() - to.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-  const fromLocal = new Date(from.getTime() - from.getTimezoneOffset() * 60000)
-    .toISOString()
-    .slice(0, 16);
-
-  return { fromLocal, toLocal };
+/** Quick ranges (lokale tijd) */
+function rangeToday() {
+  const now = new Date();
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const end = new Date(); // nu
+  return { fromLocal: toLocalInputValue(start), toLocal: toLocalInputValue(end) };
+}
+function rangeYesterday() {
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  const start = new Date(d); start.setHours(0, 0, 0, 0);
+  const end = new Date(d); end.setHours(23, 59, 59, 999);
+  return { fromLocal: toLocalInputValue(start), toLocal: toLocalInputValue(end) };
+}
+function rangeDays(n) {
+  const end = new Date();
+  const start = new Date(); start.setDate(end.getDate() - n);
+  return { fromLocal: toLocalInputValue(start), toLocal: toLocalInputValue(end) };
 }
 
 /** Eenvoudige mini-barchart zonder dependencies */
@@ -84,11 +98,7 @@ function MiniChart({ series, width = 480, height = 80, pad = 6 }) {
         const h = (d.count / max) * (height - pad * 2);
         const x = pad + i * bw;
         const y = height - pad - h;
-        return (
-          <g key={d.date}>
-            <rect x={x} y={y} width={Math.max(1, bw - 1)} height={h} />
-          </g>
-        );
+        return <rect key={d.date} x={x} y={y} width={Math.max(1, bw - 1)} height={h} />;
       })}
       {series.length <= 30 &&
         series.map((d, i) => {
@@ -104,8 +114,7 @@ function MiniChart({ series, width = 480, height = 80, pad = 6 }) {
 }
 
 /**
- * Admin Telemetry – date-range + Event + User ID + Refresh/Reset + CSV + mini chart
- * Werkt samen met /api/admin/telemetry/summary.
+ * Admin Telemetry – date-range + Event + User ID + Quick Ranges + Refresh/Reset + CSV + mini chart
  */
 export default function TelemetryAdmin() {
   const [data, setData] = useState(null); // { ok, from, to, total, counts[], recent[], series[] }
@@ -115,8 +124,8 @@ export default function TelemetryAdmin() {
   // UI state
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [event, setEvent] = useState(''); // '' = alle events
-  const [userId, setUserId] = useState(''); // nieuw: optioneel filter
+  const [event, setEvent] = useState('');
+  const [userId, setUserId] = useState('');
 
   // sessie token voor export
   const [token, setToken] = useState('');
@@ -133,7 +142,6 @@ export default function TelemetryAdmin() {
   async function load() {
     setLoading(true);
     setErr(null);
-
     try {
       // sessie/token
       const { data: sessionData } = await supabase.auth.getSession();
@@ -152,14 +160,10 @@ export default function TelemetryAdmin() {
       if (fISO) qs.set('from', fISO);
       if (tISO) qs.set('to', tISO);
       if (event) qs.set('event', event);
-      if (userId) qs.set('user_id', userId); // ⬅️ nieuw
+      if (userId) qs.set('user_id', userId);
 
       const url = '/api/admin/telemetry/summary' + (qs.toString() ? `?${qs}` : '');
-
-      // fetch
-      const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` } });
       const json = await r.json().catch(() => ({}));
 
       if (!r.ok || json?.ok === false) {
@@ -184,6 +188,13 @@ export default function TelemetryAdmin() {
     setTimeout(load, 0);
   }
 
+  function setQuickRange(fn) {
+    const { fromLocal, toLocal } = fn();
+    setFrom(fromLocal);
+    setTo(toLocal);
+    setTimeout(load, 0);
+  }
+
   async function exportCsv() {
     try {
       if (loading) return;
@@ -196,7 +207,7 @@ export default function TelemetryAdmin() {
       if (tISO) qs.set('to', tISO);
       qs.set('format', 'csv');
       if (event) qs.set('event', event);
-      if (userId) qs.set('user_id', userId); // ⬅️ nieuw
+      if (userId) qs.set('user_id', userId);
 
       const url = '/api/admin/telemetry/summary?' + qs.toString();
       const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -220,26 +231,20 @@ export default function TelemetryAdmin() {
   if (loading) return <div style={{ padding: 16 }}>Laden…</div>;
   if (err) return <div style={{ padding: 16 }}>Error: {err}</div>;
 
-  // Fallbacks
   const total = data?.total ?? 0;
   const fromDisplay = data?.from || data?.range?.from || '';
   const toDisplay = data?.to || data?.range?.to || '';
 
-  // counts array/object
   let countsRows = [];
-  if (Array.isArray(data?.counts)) {
-    countsRows = data.counts;
-  } else if (data?.counts && typeof data.counts === 'object') {
+  if (Array.isArray(data?.counts)) countsRows = data.counts;
+  else if (data?.counts && typeof data.counts === 'object')
     countsRows = Object.entries(data.counts).map(([event, count]) => ({ event, count }));
-  }
 
   const recent = Array.isArray(data?.recent) ? data.recent : [];
   const recentTs = (r) => r.ts || r.created_at || '';
 
-  // Events dropdown
   const allEvents = countsRows.map((r) => r.event).sort();
 
-  // Client-side filteren
   const recentFiltered = event ? recent.filter((r) => r.event === event) : recent;
   const countsRowsFiltered = event ? countsRows.filter((r) => r.event === event) : countsRows;
   const totalFiltered = event ? recentFiltered.length : total;
@@ -260,17 +265,9 @@ export default function TelemetryAdmin() {
 
         <div style={{ marginLeft: 12, display: 'flex', gap: 6, alignItems: 'center' }}>
           <label>Van:</label>
-          <input
-            type="datetime-local"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
+          <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
           <label>Tot:</label>
-          <input
-            type="datetime-local"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-          />
+          <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
 
           <label style={{ marginLeft: 10 }}>Event:</label>
           <select value={event} onChange={(e) => setEvent(e.target.value)}>
@@ -282,7 +279,6 @@ export default function TelemetryAdmin() {
             ))}
           </select>
 
-          {/* NIEUW: User ID filter */}
           <label style={{ marginLeft: 10 }}>User ID:</label>
           <input
             type="text"
@@ -292,15 +288,17 @@ export default function TelemetryAdmin() {
             style={{ width: 280 }}
           />
 
-          <button onClick={load} disabled={loading}>
-            {loading ? 'Bezig…' : 'Refresh'}
-          </button>
-          <button onClick={onResetRange} disabled={loading}>
-            Reset
-          </button>
-          <button onClick={exportCsv} style={{ marginLeft: 8 }} disabled={loading}>
-            CSV export
-          </button>
+          <button onClick={load} disabled={loading}>{loading ? 'Bezig…' : 'Refresh'}</button>
+          <button onClick={onResetRange} disabled={loading}>Reset</button>
+          <button onClick={exportCsv} style={{ marginLeft: 8 }} disabled={loading}>CSV export</button>
+        </div>
+
+        {/* Quick ranges */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <button onClick={() => setQuickRange(rangeToday)} disabled={loading}>Vandaag</button>
+          <button onClick={() => setQuickRange(rangeYesterday)} disabled={loading}>Gisteren</button>
+          <button onClick={() => setQuickRange(() => rangeDays(7))} disabled={loading}>7 dagen</button>
+          <button onClick={() => setQuickRange(() => rangeDays(30))} disabled={loading}>30 dagen</button>
         </div>
       </div>
 
@@ -308,10 +306,7 @@ export default function TelemetryAdmin() {
       {Array.isArray(data?.series) && data.series.length > 0 && (
         <div style={{ margin: '12px 0' }}>
           <div style={{ fontSize: 14, marginBottom: 4 }}>Events per dag</div>
-          <MiniChart
-            series={data.series}
-            width={Math.min(12 * data.series.length + 24, 720)}
-          />
+          <MiniChart series={data.series} width={Math.min(12 * data.series.length + 24, 720)} />
         </div>
       )}
 
@@ -321,28 +316,18 @@ export default function TelemetryAdmin() {
         <table style={{ borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>
-                Event
-              </th>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>
-                #
-              </th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>Event</th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>#</th>
             </tr>
           </thead>
           <tbody>
             {countsRows.length === 0 && (
-              <tr>
-                <td colSpan={2}>—</td>
-              </tr>
+              <tr><td colSpan={2}>—</td></tr>
             )}
             {countsRowsFiltered.map(({ event, count }) => (
               <tr key={event}>
-                <td className="pr-4" style={{ paddingRight: 16 }}>
-                  {event}
-                </td>
-                <td className="pr-4" style={{ paddingRight: 16 }}>
-                  {count}
-                </td>
+                <td className="pr-4" style={{ paddingRight: 16 }}>{event}</td>
+                <td className="pr-4" style={{ paddingRight: 16 }}>{count}</td>
               </tr>
             ))}
           </tbody>
@@ -355,34 +340,20 @@ export default function TelemetryAdmin() {
         <table style={{ borderCollapse: 'collapse', width: '100%' }}>
           <thead>
             <tr>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>
-                Tijd
-              </th>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>
-                Event
-              </th>
-              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>
-                Props
-              </th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>Tijd</th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16, width: 220 }}>Event</th>
+              <th className="text-left pr-4" style={{ textAlign: 'left', paddingRight: 16 }}>Props</th>
             </tr>
           </thead>
           <tbody>
             {recent.length === 0 && (
-              <tr>
-                <td colSpan={3}>—</td>
-              </tr>
+              <tr><td colSpan={3}>—</td></tr>
             )}
             {recentFiltered.map((r, i) => (
               <tr key={i}>
-                <td className="pr-4" style={{ paddingRight: 16 }}>
-                  {recentTs(r)}
-                </td>
-                <td className="pr-4" style={{ paddingRight: 16 }}>
-                  {r.event}
-                </td>
-                <td>
-                  <code style={{ opacity: 0.8 }}>{JSON.stringify(r.props ?? {})}</code>
-                </td>
+                <td className="pr-4" style={{ paddingRight: 16 }}>{recentTs(r)}</td>
+                <td className="pr-4" style={{ paddingRight: 16 }}>{r.event}</td>
+                <td><code style={{ opacity: 0.8 }}>{JSON.stringify(r.props ?? {})}</code></td>
               </tr>
             ))}
           </tbody>
