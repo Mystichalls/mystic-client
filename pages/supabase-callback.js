@@ -1,32 +1,32 @@
 // pages/supabase-callback.js
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
-import { supabase } from '../lib/supabase';
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import { createPagesBrowserClient } from "@supabase/auth-helpers-nextjs";
 
 export default function SupabaseCallback() {
   const router = useRouter();
-  const [message, setMessage] = useState('Bezig met inloggen...');
+  const [message, setMessage] = useState("Bezig met inloggen...");
 
   useEffect(() => {
+    const supabase = createPagesBrowserClient();
+
     (async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        // Dit is de belangrijke stap: code -> session + cookies
+        const { error } = await supabase.auth.exchangeCodeForSession(
+          window.location.href
+        );
 
         if (error) {
-          console.error(error);
-          setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
+          console.error("exchangeCodeForSession error:", error);
+          setMessage("Inloggen mislukt. Vraag een nieuwe inloglink aan.");
           return;
         }
 
-        if (!data.session) {
-          setMessage('Geen sessie gevonden. Vraag een nieuwe inloglink aan.');
-          return;
-        }
-
-        router.replace('/dashboard');
+        router.replace("/dashboard");
       } catch (e) {
         console.error(e);
-        setMessage('Onbekende fout bij het inloggen.');
+        setMessage("Onbekende fout bij het inloggen.");
       }
     })();
   }, [router]);
