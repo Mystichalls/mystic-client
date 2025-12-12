@@ -9,30 +9,29 @@ export default function SupabaseCallback() {
 
   useEffect(() => {
     const run = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
+      try {
+        // Dit pakt automatisch info uit ?query én uit #hash
+        const { data, error } = await supabase.auth.getSessionFromUrl({
+          storeSession: true,
+        });
 
-      if (!code) {
-        setMsg('Geen code gevonden in de URL. Vraag een nieuwe inloglink aan.');
-        return;
+        if (error) {
+          console.error('getSessionFromUrl error:', error);
+          setMsg('Inloggen mislukt: ' + (error.message || 'Onbekende fout'));
+          return;
+        }
+
+        if (!data?.session) {
+          setMsg('Geen sessie gevonden in de URL. Vraag een nieuwe inloglink aan.');
+          return;
+        }
+
+        setMsg('Gelukt! Doorsturen…');
+        router.replace('/dashboard');
+      } catch (e) {
+        console.error('Callback unknown error:', e);
+        setMsg('Onbekende fout: ' + (e?.message || e));
       }
-
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-      if (error) {
-        console.error('exchangeCodeForSession error:', error);
-        setMsg('Inloggen mislukt: ' + (error.message || 'Onbekende fout'));
-        return;
-      }
-
-      // Extra check: heb je echt een sessie?
-      if (!data?.session) {
-        setMsg('Geen sessie teruggekregen. Vraag een nieuwe inloglink aan.');
-        return;
-      }
-
-      setMsg('Gelukt! Doorsturen…');
-      router.replace('/dashboard');
     };
 
     run();
