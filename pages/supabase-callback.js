@@ -8,51 +8,27 @@ export default function SupabaseCallback() {
   const [message, setMessage] = useState('Bezig met inloggen...');
 
   useEffect(() => {
-    async function handleCallback() {
+    (async () => {
       try {
-        const url = new URL(window.location.href);
+        const { data, error } = await supabase.auth.getSession();
 
-        // 1) PKCE flow: ?code=...
-        const code = url.searchParams.get('code');
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
-          if (error) {
-            console.error('exchangeCodeForSession error:', error);
-            setMessage('Inloggen mislukt (code). Vraag een nieuwe inloglink aan.');
-            return;
-          }
-          router.replace('/dashboard');
+        if (error) {
+          console.error(error);
+          setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
           return;
         }
 
-        // 2) Implicit flow: #access_token=...&refresh_token=...
-        const hash = window.location.hash.startsWith('#')
-          ? window.location.hash.slice(1)
-          : window.location.hash;
-
-        const params = new URLSearchParams(hash);
-        const access_token = params.get('access_token');
-        const refresh_token = params.get('refresh_token');
-
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-          if (error) {
-            console.error('setSession error:', error);
-            setMessage('Inloggen mislukt (token). Vraag een nieuwe inloglink aan.');
-            return;
-          }
-          router.replace('/dashboard');
+        if (!data.session) {
+          setMessage('Geen sessie gevonden. Vraag een nieuwe inloglink aan.');
           return;
         }
 
-        setMessage('Geen login-code of tokens gevonden in de URL. Vraag een nieuwe inloglink aan.');
-      } catch (err) {
-        console.error('Callback unknown error:', err);
+        router.replace('/dashboard');
+      } catch (e) {
+        console.error(e);
         setMessage('Onbekende fout bij het inloggen.');
       }
-    }
-
-    handleCallback();
+    })();
   }, [router]);
 
   return (
