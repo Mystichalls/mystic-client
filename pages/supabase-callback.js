@@ -8,30 +8,36 @@ export default function SupabaseCallback() {
   const [message, setMessage] = useState('Bezig met inloggen...');
 
   useEffect(() => {
-    async function handleCallback() {
+    async function checkSession() {
       try {
-        const url = window.location.href;
-
-        // Belangrijk: dit zet de Supabase-sessie op basis van de code in de URL
-        const { error } = await supabase.auth.exchangeCodeForSession(url);
+        // Supabase zou de sessie automatisch moeten hebben gezet
+        // op basis van de tokens in de URL van de magic link.
+        const { data, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error('exchangeCodeForSession error', error);
+          console.error('getSession error', error);
           setMessage(
             'Er ging iets mis bij het inloggen. Vraag een nieuwe inloglink aan.'
           );
           return;
         }
 
-        // Klaar -> door naar dashboard
-        router.replace('/dashboard');
+        if (data.session) {
+          // Ingelogd -> naar dashboard
+          router.replace('/dashboard');
+        } else {
+          // Geen sessie gevonden
+          setMessage(
+            'Geen actieve sessie gevonden. Vraag een nieuwe inloglink aan.'
+          );
+        }
       } catch (err) {
         console.error('Onbekende fout in callback', err);
         setMessage('Onbekende fout bij het inloggen.');
       }
     }
 
-    handleCallback();
+    checkSession();
   }, [router]);
 
   return (
@@ -41,4 +47,3 @@ export default function SupabaseCallback() {
     </div>
   );
 }
-
