@@ -1,29 +1,8 @@
 // pages/login.js
 import { useState } from 'react';
-import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabase';
-import { getServerClient } from '../lib/supabaseServer';
-
-// Als je al ingelogd bent, direct naar het dashboard
-export async function getServerSideProps(ctx) {
-  const supa = getServerClient(ctx);
-
-  const {
-    data: { session },
-  } = await supa.auth.getSession();
-
-  if (session) {
-    return {
-      redirect: { destination: '/dashboard', permanent: false },
-    };
-  }
-
-  return { props: {} };
-}
 
 export default function LoginPage() {
-  const router = useRouter();
-
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'sent' | 'error'
   const [message, setMessage] = useState('');
@@ -73,10 +52,7 @@ export default function LoginPage() {
 
       <form onSubmit={handleSubmit}>
         <div style={{ marginBottom: 12 }}>
-          <label
-            htmlFor="email"
-            style={{ display: 'block', marginBottom: 4 }}
-          >
+          <label htmlFor="email" style={{ display: 'block', marginBottom: 4 }}>
             E-mail
           </label>
           <input
@@ -99,11 +75,7 @@ export default function LoginPage() {
         </button>
       </form>
 
-      {message && (
-        <p style={{ marginTop: 12 }}>
-          {message}
-        </p>
-      )}
+      {message && <p style={{ marginTop: 12 }}>{message}</p>}
     </div>
   );
 }

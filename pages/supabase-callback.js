@@ -1,49 +1,31 @@
 // pages/supabase-callback.js
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabase';
 
 export default function SupabaseCallback() {
   const router = useRouter();
-  const [message, setMessage] = useState('Bezig met inloggen...');
 
   useEffect(() => {
-    async function checkSession() {
-      try {
-        // Supabase zou de sessie automatisch moeten hebben gezet
-        // op basis van de tokens in de URL van de magic link.
-        const { data, error } = await supabase.auth.getSession();
+    if (!router.isReady) return;
 
-        if (error) {
-          console.error('getSession error', error);
-          setMessage(
-            'Er ging iets mis bij het inloggen. Vraag een nieuwe inloglink aan.'
-          );
-          return;
-        }
+    const handleCallback = async () => {
+      const { error } = await supabase.auth.exchangeCodeForSession(
+        window.location.search
+      );
 
-        if (data.session) {
-          // Ingelogd -> naar dashboard
-          router.replace('/dashboard');
-        } else {
-          // Geen sessie gevonden
-          setMessage(
-            'Geen actieve sessie gevonden. Vraag een nieuwe inloglink aan.'
-          );
-        }
-      } catch (err) {
-        console.error('Onbekende fout in callback', err);
-        setMessage('Onbekende fout bij het inloggen.');
+      if (error) {
+        console.error(error);
+        router.replace('/login');
+        return;
       }
-    }
 
-    checkSession();
+      // succes → dashboard
+      router.replace('/dashboard');
+    };
+
+    handleCallback();
   }, [router]);
 
-  return (
-    <div style={{ padding: 24, maxWidth: 420 }}>
-      <h1>Mystic Halls — Inloggen</h1>
-      <p>{message}</p>
-    </div>
-  );
+  return <p>Bezig met inloggen…</p>;
 }
