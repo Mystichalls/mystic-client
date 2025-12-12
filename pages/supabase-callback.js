@@ -5,42 +5,60 @@ import { supabase } from '../lib/supabase';
 
 export default function SupabaseCallback() {
   const router = useRouter();
-  const [msg, setMsg] = useState('Bezig met inloggen…');
+  const [message, setMessage] = useState('Bezig met inloggen...');
 
   useEffect(() => {
-    const run = async () => {
+    async function handleCallback() {
       try {
-        // Dit pakt automatisch info uit ?query én uit #hash
-        const { data, error } = await supabase.auth.getSessionFromUrl({
-          storeSession: true,
-        });
+        const url = new URL(window.location.href);
 
-        if (error) {
-          console.error('getSessionFromUrl error:', error);
-          setMsg('Inloggen mislukt: ' + (error.message || 'Onbekende fout'));
+        // 1) PKCE flow: ?code=...
+        const code = url.searchParams.get('code');
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+          if (error) {
+            console.error('exchangeCodeForSession error:', error);
+            setMessage('Inloggen mislukt (code). Vraag een nieuwe inloglink aan.');
+            return;
+          }
+          router.replace('/dashboard');
           return;
         }
 
-        if (!data?.session) {
-          setMsg('Geen sessie gevonden in de URL. Vraag een nieuwe inloglink aan.');
+        // 2) Implicit flow: #access_token=...&refresh_token=...
+        const hash = window.location.hash.startsWith('#')
+          ? window.location.hash.slice(1)
+          : window.location.hash;
+
+        const params = new URLSearchParams(hash);
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (error) {
+            console.error('setSession error:', error);
+            setMessage('Inloggen mislukt (token). Vraag een nieuwe inloglink aan.');
+            return;
+          }
+          router.replace('/dashboard');
           return;
         }
 
-        setMsg('Gelukt! Doorsturen…');
-        router.replace('/dashboard');
-      } catch (e) {
-        console.error('Callback unknown error:', e);
-        setMsg('Onbekende fout: ' + (e?.message || e));
+        setMessage('Geen login-code of tokens gevonden in de URL. Vraag een nieuwe inloglink aan.');
+      } catch (err) {
+        console.error('Callback unknown error:', err);
+        setMessage('Onbekende fout bij het inloggen.');
       }
-    };
+    }
 
-    run();
+    handleCallback();
   }, [router]);
 
   return (
     <div style={{ padding: 24 }}>
       <h1>Mystic Halls — Inloggen</h1>
-      <p>{msg}</p>
+      <p>{message}</p>
     </div>
   );
 }
