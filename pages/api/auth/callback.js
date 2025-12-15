@@ -4,8 +4,10 @@ import { createPagesServerClient } from '@supabase/auth-helpers-nextjs';
 export default async function handler(req, res) {
   const supabase = createPagesServerClient({ req, res });
 
-  // Dit zet de sessie + cookies op basis van de code in de URL
-  const { error } = await supabase.auth.exchangeCodeForSession(req.url);
+  const code = req.query.code;
+  if (!code) return res.redirect('/login?error=missing_code');
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     console.error('exchangeCodeForSession error:', error.message);
