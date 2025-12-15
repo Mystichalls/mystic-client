@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
-import { getServerClient } from '../lib/supabaseServer';
 
 // PvE tabs (jouw bestaande components)
 import Tower from '../components/pve/Tower';
@@ -18,31 +17,6 @@ const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
   .filter(Boolean);
 
 const isAdmin = (email) => ADMIN_EMAILS.includes((email || '').toLowerCase());
-
-/* ==== SERVER-SIDE GUARD (redirect naar /login als geen sessie) ==== */
-export async function getServerSideProps(ctx) {
-  const supa = getServerClient(ctx);
-  const {
-    data: { session },
-    error,
-  } = await supa.auth.getSession();
-
-  if (!session || error) {
-    return {
-      redirect: { destination: '/login', permanent: false },
-    };
-  }
-
-  // optioneel userdata aan props meegeven (niet verplicht te gebruiken)
-  return {
-    props: {
-      userFromServer: {
-        id: session.user.id,
-        email: session.user.email ?? null,
-      },
-    },
-  };
-}
 
 /* ==== HOOFD-COMPONENT (enige default export!) ==== */
 export default function Dashboard() {
