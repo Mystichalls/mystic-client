@@ -8,55 +8,56 @@ export default function SupabaseCallback() {
   const [message, setMessage] = useState('Bezig met inloggen...');
 
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+
+    async function run() {
       try {
-        const url = new URL(window.location.href);
+        // DEBUG: laat exact zien wat we binnenkrijgen
+        console.log('[supabase-callback] href:', window.location.href);
+        console.log('[supabase-callback] search:', window.location.search);
+        console.log('[supabase-callback] hash:', window.location.hash);
 
-        // 1) PKCE code flow (?code=...)
-        const code = url.searchParams.get('code');
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            console.error('exchangeCodeForSession error:', error);
-            setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
-            return;
-          }
-          router.replace('/dashboard');
+        // Dit handelt zowel ?code= (PKCE) als #access_token= (implicit) af
+        const { data, error } = await supabase.auth.getSessionFromUrl({
+          storeSession: true,
+        });
+
+        console.log('[supabase-callback] data:', data);
+        if (error) {
+          console.error('[supabase-callback] getSessionFromUrl error:', error);
+          if (!mounted) return;
+          setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
           return;
         }
 
-        // 2) Implicit flow (#access_token=...&refresh_token=...)
-        const hash = new URLSearchParams(url.hash.replace('#', ''));
-        const access_token = hash.get('access_token');
-        const refresh_token = hash.get('refresh_token');
-
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-          if (error) {
-            console.error('setSession error:', error);
-            setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
-            return;
-          }
-          router.replace('/dashboard');
+        if (!data?.session) {
+          if (!mounted) return;
+          setMessage('Geen sessie gevonden in de callback URL. Vraag een nieuwe inloglink aan.');
           return;
         }
 
-        // 3) Niks gevonden
-        setMessage('Geen login-data gevonden in de URL. Vraag een nieuwe inloglink aan.');
-      } catch (e) {
-        console.error(e);
+        // Succes: door naar dashboard
+        router.replace('/dashboard');
+      } catch (err) {
+        console.error('[supabase-callback] unknown error:', err);
+        if (!mounted) return;
         setMessage('Onbekende fout bij het inloggen.');
       }
-    })();
+    }
+
+    run();
+    return () => {
+      mounted = false;
+    };
   }, [router]);
 
   return (
     <div style={{ padding: 24, maxWidth: 520 }}>
       <h1>Mystic Halls — Inloggen</h1>
       <p>{message}</p>
+      <p style={{ marginTop: 12, opacity: 0.7 }}>
+        (Open DevTools → Console om debug te zien)
+      </p>
     </div>
   );
 }
