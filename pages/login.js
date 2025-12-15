@@ -17,7 +17,7 @@ export default function LoginPage() {
 
     try {
       // Waar de magic link naartoe terugkomt
-      const redirectTo = `${window.location.origin}/api/auth/callback`;
+      const redirectTo = `${window.location.origin}/supabase-callback`;
 
       const { error } = await supabase.auth.signInWithOtp({
         email,
