@@ -8,32 +8,49 @@ export default function SupabaseCallback() {
   const [message, setMessage] = useState('Bezig met inloggen...');
 
   useEffect(() => {
-    async function run() {
+    (async () => {
       try {
         const url = new URL(window.location.href);
+
+        // 1) PKCE code flow (?code=...)
         const code = url.searchParams.get('code');
-
-        if (!code) {
-          setMessage('Geen code gevonden in de URL. Vraag een nieuwe inloglink aan.');
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            console.error('exchangeCodeForSession error:', error);
+            setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
+            return;
+          }
+          router.replace('/dashboard');
           return;
         }
 
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        // 2) Implicit flow (#access_token=...&refresh_token=...)
+        const hash = new URLSearchParams(url.hash.replace('#', ''));
+        const access_token = hash.get('access_token');
+        const refresh_token = hash.get('refresh_token');
 
-        if (error) {
-          console.error('exchangeCodeForSession error', error);
-          setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+          if (error) {
+            console.error('setSession error:', error);
+            setMessage('Inloggen mislukt. Vraag een nieuwe inloglink aan.');
+            return;
+          }
+          router.replace('/dashboard');
           return;
         }
 
-        router.replace('/dashboard');
-      } catch (err) {
-        console.error(err);
+        // 3) Niks gevonden
+        setMessage('Geen login-data gevonden in de URL. Vraag een nieuwe inloglink aan.');
+      } catch (e) {
+        console.error(e);
         setMessage('Onbekende fout bij het inloggen.');
       }
-    }
-
-    run();
+    })();
   }, [router]);
 
   return (
