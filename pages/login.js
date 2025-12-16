@@ -24,7 +24,7 @@ export default function LoginPage() {
       return;
     }
 
-    // Succes -> naar dashboard
+    // Succes → dashboard
     window.location.href = '/dashboard';
   }
 
@@ -69,6 +69,11 @@ export default function LoginPage() {
           {message}
         </p>
       )}
+
+      {/* ⬇️ REGISTRATIE LINK */}
+      <p style={{ marginTop: 16 }}>
+        Nog geen account? <a href="/register">Registreer hier</a>
+      </p>
     </div>
   );
 }
