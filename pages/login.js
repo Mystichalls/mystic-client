@@ -4,61 +4,39 @@ import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'sent' | 'error'
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState('idle'); // 'idle' | 'loading' | 'error'
   const [message, setMessage] = useState('');
 
-  async function handleSubmit(e) {
+  async function handleLogin(e) {
     e.preventDefault();
-
-    if (!email) return;
-
     setStatus('loading');
     setMessage('');
 
-    try {
-      // Waar de magic link naartoe terugkomt
-      const redirectTo = `${window.location.origin}/supabase-callback`;
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: redirectTo,
-        },
-      });
-
-      if (error) {
-        setStatus('error');
-        setMessage(error.message || 'Er ging iets mis bij het versturen.');
-        return;
-      }
-
-      setStatus('sent');
-      setMessage(
-        'We hebben een inloglink naar je e-mail gestuurd. Klik op de link om in te loggen.'
-      );
-      setEmail('');
-    } catch (err) {
+    if (error) {
       setStatus('error');
-      setMessage(err.message || 'Onbekende fout bij het inloggen.');
+      setMessage(error.message || 'Inloggen mislukt.');
+      return;
     }
+
+    // Succes -> naar dashboard
+    window.location.href = '/dashboard';
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 400 }}>
+    <div style={{ padding: 24, maxWidth: 420 }}>
       <h1 style={{ marginBottom: 12 }}>Mystic Halls — Login</h1>
-      <p style={{ marginBottom: 16 }}>
-        Vul je e-mail in en we sturen je een inloglink.
-      </p>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleLogin}>
         <div style={{ marginBottom: 12 }}>
-          <label htmlFor="email" style={{ display: 'block', marginBottom: 4 }}>
-            E-mail
-          </label>
+          <label style={{ display: 'block', marginBottom: 4 }}>E-mail</label>
           <input
-            id="email"
             type="email"
-            autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -66,16 +44,31 @@ export default function LoginPage() {
           />
         </div>
 
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', marginBottom: 4 }}>Wachtwoord</label>
+          <input
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ width: '100%', padding: 8, boxSizing: 'border-box' }}
+          />
+        </div>
+
         <button
           type="submit"
-          disabled={status === 'loading' || !email}
+          disabled={status === 'loading'}
           style={{ padding: '8px 16px' }}
         >
-          {status === 'loading' ? 'Bezig…' : 'Stuur inloglink'}
+          {status === 'loading' ? 'Bezig…' : 'Inloggen'}
         </button>
       </form>
 
-      {message && <p style={{ marginTop: 12 }}>{message}</p>}
+      {message && (
+        <p style={{ marginTop: 12, color: status === 'error' ? 'crimson' : 'inherit' }}>
+          {message}
+        </p>
+      )}
     </div>
   );
 }
