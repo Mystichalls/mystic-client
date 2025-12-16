@@ -29,7 +29,7 @@ export default function RegisterPage() {
 
     // Na e-mail confirm willen we later auto-login via callback.
     // Voor nu zetten we hem alvast klaar (stap 3 maken we dit echt werkend).
-    const emailRedirectTo = `${window.location.origin}/api/auth/callback`;
+    const emailRedirectTo = `${window.location.origin}/login`;
 
     const { data, error } = await supabase.auth.signUp({
       email,
